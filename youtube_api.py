@@ -100,3 +100,24 @@ def reply_to_comment(parent_comment_id, text):
         return f"Success! Replied to {parent_comment_id} with ID: {response['id']}"
     except HttpError as e:
         return f"Failed to reply. Ensure you are authorized. Error: {e}"
+
+def post_top_level_comment(video_id, text):
+    youtube = get_youtube_service()
+    try:
+        request = youtube.commentThreads().insert(
+            part="snippet",
+            body={
+                "snippet": {
+                    "videoId": video_id,
+                    "topLevelComment": {
+                        "snippet": {
+                            "textOriginal": text
+                        }
+                    }
+                }
+            }
+        )
+        response = request.execute()
+        return f"Success! Announcement posted on video {video_id}. Comment ID: {response['id']}"
+    except HttpError as e:
+        return f"Failed to post announcement. Ensure you are authorized. Error: {e}"

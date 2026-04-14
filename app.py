@@ -1,7 +1,7 @@
 import streamlit as st
-from youtube_api import get_videos, get_comments, get_video_stats
+from youtube_api import get_videos, get_comments, get_video_stats, reply_to_comment, post_top_level_comment
 from analysis import analyze_comments
-from langchain_core.messages import HumanMessage, AIMessage
+from langchain_core.messages import HumanMessage, AIMessage, ToolMessage
 
 st.set_page_config(page_title="YouTube AI Analyst", layout="wide")
 
@@ -150,19 +150,42 @@ elif page == "AI Assistant":
         with st.chat_message(role):
             st.markdown(msg.content)
 
-    if prompt := st.chat_input(f"E.g., Analyze the latest video on my channel {channel_id}..."):
+
+    if prompt := st.chat_input("E.g., Analyze the latest video on my channel..."):
+        # UI only gets the clean user prompt
         st.session_state.messages.append(HumanMessage(content=prompt))
         
         with st.chat_message("user"):
             st.markdown(prompt)
 
+        # Under the hood, inject context into the prompt
+        augmented_prompt = prompt
+        # We always enforce the active channel_id so the AI NEVER forgets it across long threads
+        augmented_prompt += f"\n\n[System Note: The active channel ID selected by the user is '{channel_id}'. Implicitly use this for tasks unless asked otherwise.]"
+
         with st.chat_message("assistant"):
             with st.spinner("Agent is working..."):
                 try:
-                    # Agent invoke
+                    # Agent invoke using memory configuration, passing ONLY the new augmented message
+                    config = {"configurable": {"thread_id": "youtube_agent_session"}}
                     response = agent_executor.invoke({
-                        "messages": st.session_state.messages
-                    })
+                        "messages": [HumanMessage(content=augmented_prompt)]
+                    }, config=config)
+
+                    # Iterate over the messages that happened AFTER the last human interaction
+                    # so we don't repeat toasts for old actions.
+                    last_user_idx = len(response["messages"]) - 1
+                    while last_user_idx >= 0 and not isinstance(response["messages"][last_user_idx], HumanMessage):
+                        last_user_idx -= 1
+
+                    new_messages = response["messages"][last_user_idx:]
+                    for msg in new_messages:
+                        if isinstance(msg, ToolMessage):
+                            if msg.name in ["post_comment_reply", "post_top_level_comment"]:
+                                st.success(f"✅ Action Executed -> Result: {msg.content}")
+                            else:
+                                st.toast(f"🤖 Tool Executed: {msg.name}")
+                                
                     bot_msg = response["messages"][-1]
                     st.markdown(bot_msg.content)
                     st.session_state.messages.append(bot_msg)
