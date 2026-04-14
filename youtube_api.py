@@ -60,7 +60,7 @@ def get_comments(video_id):
     youtube = get_youtube_service()
     try:
         request = youtube.commentThreads().list(
-            part="snippet",
+            part="snippet,replies",
             videoId=video_id,
             maxResults=50
         )
@@ -68,12 +68,25 @@ def get_comments(video_id):
 
         comments = []
         for item in response.get("items", []):
+            # Top-level comment
             snippet = item["snippet"]["topLevelComment"]["snippet"]
             comments.append({
                 "comment_id": item["id"],
                 "author": snippet.get("authorDisplayName", "Unknown"),
-                "text": snippet.get("textOriginal", snippet.get("textDisplay", ""))
+                "text": snippet.get("textOriginal", snippet.get("textDisplay", "")),
+                "is_reply": False
             })
+            
+            # Nested replies
+            if "replies" in item:
+                for reply in item["replies"].get("comments", []):
+                    rep_snippet = reply["snippet"]
+                    comments.append({
+                        "comment_id": reply["id"],
+                        "author": rep_snippet.get("authorDisplayName", "Unknown"),
+                        "text": rep_snippet.get("textOriginal", rep_snippet.get("textDisplay", "")),
+                        "is_reply": True
+                    })
 
         return comments
 
