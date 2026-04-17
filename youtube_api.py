@@ -1,5 +1,6 @@
 import os
 import pickle
+import re
 from googleapiclient.discovery import build
 from google_auth_oauthlib.flow import InstalledAppFlow
 from google.auth.transport.requests import Request
@@ -134,3 +135,94 @@ def post_top_level_comment(video_id, text):
         return f"Success! Announcement posted on video {video_id}. Comment ID: {response['id']}"
     except HttpError as e:
         return f"Failed to post announcement. Ensure you are authorized. Error: {e}"
+
+def resolve_channel(query):
+    youtube = get_youtube_service()
+    
+    # Check if it's a known URL format
+    if "youtube.com/channel/" in query:
+        return query.split("youtube.com/channel/")[-1].split("/")[0].split("?")[0]
+    
+    # Extract handle if starting with @, or from URL
+    handle = None
+    if query.startswith("@"):
+        handle = query
+    elif "youtube.com/@" in query:
+        handle = "@" + query.split("youtube.com/@")[-1].split("/")[0].split("?")[0]
+    
+    if handle:
+        # Search by handle
+        request = youtube.search().list(
+            part="snippet",
+            q=handle,
+            type="channel",
+            maxResults=1
+        )
+        response = request.execute()
+        if response.get("items"):
+            return response["items"][0]["snippet"]["channelId"]
+    
+    # Generic search
+    request = youtube.search().list(
+        part="snippet",
+        q=query,
+        type="channel",
+        maxResults=1
+    )
+    response = request.execute()
+    if response.get("items"):
+        return response["items"][0]["snippet"]["channelId"]
+        
+    return None
+
+def get_channel_stats(channel_id):
+    youtube = get_youtube_service()
+    request = youtube.channels().list(
+        part="statistics,snippet",
+        id=channel_id
+    )
+    response = request.execute()
+    if response.get("items"):
+        item = response["items"][0]
+        return {
+            "channel_id": channel_id,
+            "title": item["snippet"]["title"],
+            "description": item["snippet"]["description"],
+            "customUrl": item["snippet"].get("customUrl", ""),
+            "subscriberCount": int(item["statistics"].get("subscriberCount", 0)),
+            "videoCount": int(item["statistics"].get("videoCount", 0)),
+            "viewCount": int(item["statistics"].get("viewCount", 0))
+        }
+    return None
+
+def search_channels_by_niche(niche, max_results=5):
+    youtube = get_youtube_service()
+    # Search for top videos in that niche, which naturally bubbles up the most popular/relevant creators
+    request = youtube.search().list(
+        part="snippet",
+        q=niche,
+        type="video",
+        maxResults=max_results * 5,
+        order="relevance"
+    )
+    response = request.execute()
+    
+    seen_channels = set()
+    channels = []
+    
+    for item in response.get("items", []):
+        snippet = item["snippet"]
+        channel_id = snippet["channelId"]
+        
+        if channel_id not in seen_channels:
+            seen_channels.add(channel_id)
+            channels.append({
+                "title": snippet["channelTitle"],
+                "channel_id": channel_id,
+                "description": f"Found via popular video: {snippet['title']}"
+            })
+            
+            if len(channels) >= max_results:
+                break
+                
+    return channels

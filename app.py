@@ -15,7 +15,7 @@ channel_id = st.sidebar.text_input("Enter Channel ID")
 
 page = st.sidebar.radio(
     "Go to",
-    ["Overview", "Video Analysis", "AI Assistant"]
+    ["Overview", "Video Analysis", "AI Assistant", "Competitor Analysis"]
 )
 
 # 🚫 If no channel id
@@ -194,3 +194,87 @@ elif page == "AI Assistant":
                     st.error(f"Error during agent execution: {reason}")
                     if "Missing client_secret.json" in reason:
                         st.error("Please download 'client_secret.json' from Google Cloud Console and place it in the project root.")
+
+# =========================================================
+# 🕵️ COMPETITOR ANALYSIS PAGE
+# =========================================================
+elif page == "Competitor Analysis":
+    st.header("🕵️ Competitor Analysis")
+    st.markdown("Analyze competitors by directly entering their info or letting AI find them for you.")
+    
+    from youtube_api import resolve_channel, get_channel_stats, get_videos
+    from analysis import analyze_channel_strategy
+    from competitor_agent import competitor_agent_executor
+    from langchain_core.messages import HumanMessage
+    
+    input_type = st.radio("How do you want to find competitors?", ["Direct Input (URL or Handle)", "AI-Assisted Niche Discovery"])
+    
+    # We will use st.session_state to store the active competitor ID because Streamlit re-runs on every input
+    if "comp_channel_id" not in st.session_state:
+        st.session_state.comp_channel_id = None
+    
+    if input_type == "Direct Input (URL or Handle)":
+        query = st.text_input("Enter YouTube Channel URL, Handle (e.g. @MrBeast), or Name")
+        if st.button("Find Channel") and query:
+            with st.spinner("Resolving channel..."):
+                cid = resolve_channel(query)
+                if cid:
+                    st.success(f"Channel resolved! ID: {cid}")
+                    st.session_state.comp_channel_id = cid
+                else:
+                    st.error("Could not resolve channel. Try a URL or Exact Handle.")
+    
+    else:
+        st.info("Ask the AI to find competitors. E.g., 'Find tech review channels'")
+        if "comp_messages" not in st.session_state:
+            st.session_state.comp_messages = []
+            
+        for msg in st.session_state.comp_messages:
+            role = "assistant" if isinstance(msg, AIMessage) else "user"
+            with st.chat_message(role):
+                st.markdown(msg.content)
+                
+        if prompt := st.chat_input("What is your niche?"):
+            st.session_state.comp_messages.append(HumanMessage(content=prompt))
+            with st.chat_message("user"):
+                st.markdown(prompt)
+                
+            with st.chat_message("assistant"):
+                with st.spinner("Agent is searching..."):
+                    config = {"configurable": {"thread_id": "competitor_thread_1"}}
+                    response = competitor_agent_executor.invoke({"messages": [HumanMessage(content=prompt)]}, config=config)
+                    bot_msg = response["messages"][-1]
+                    st.markdown(bot_msg.content)
+                    st.session_state.comp_messages.append(bot_msg)
+        
+        st.divider()
+        st.write("Once you find a channel from the list above, enter its ID below:")
+        manual_id = st.text_input("Competitor Channel ID")
+        if st.button("Set Competitor"):
+            st.session_state.comp_channel_id = manual_id
+        
+    if st.session_state.comp_channel_id:
+        st.divider()
+        st.subheader("📊 Competitor Dashboard")
+        with st.spinner("Fetching channel stats and top videos..."):
+            c_stats = get_channel_stats(st.session_state.comp_channel_id)
+            if c_stats:
+                col1, col2, col3 = st.columns(3)
+                col1.metric("Subscribers", f"{c_stats['subscriberCount']:,}")
+                col2.metric("Total Views", f"{c_stats['viewCount']:,}")
+                col3.metric("Total Videos", f"{c_stats['videoCount']:,}")
+                
+                st.write(f"**Description:** {c_stats['description'][:300]}...")
+                
+                st.subheader("🎯 Top Recent Videos")
+                recent_vids = get_videos(st.session_state.comp_channel_id)
+                for v in recent_vids:
+                    st.write(f"- 🎥 {v['title']}")
+                
+                st.subheader("🧠 Strategy Insights")
+                if st.button("Generate Strategy Analysis"):
+                    with st.spinner("AI is analyzing competitor strategy..."):
+                        insights = analyze_channel_strategy(c_stats, recent_vids)
+                        st.markdown(insights)
+            else:
+                st.warning("Could not fetch stats for this channel. Check the ID.")
