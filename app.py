@@ -15,7 +15,7 @@ channel_id = st.sidebar.text_input("Enter Channel ID")
 
 page = st.sidebar.radio(
     "Go to",
-    ["Overview", "Video Analysis", "AI Assistant", "Competitor Analysis"]
+    ["Overview", "Comment Analysis", "Transcript Analysis", "AI Assistant", "Competitor Analysis"]
 )
 
 # 🚫 If no channel id
@@ -76,10 +76,10 @@ if page == "Overview":
     st.dataframe(data)
 
 # =========================================================
-# 🎬 VIDEO ANALYSIS PAGE
+# 💬 COMMENT ANALYSIS PAGE
 # =========================================================
-elif page == "Video Analysis":
-    st.header("🎬 Video Analysis")
+elif page == "Comment Analysis":
+    st.header("💬 Comment Analysis")
 
     video_titles = [v["title"] for v in videos]
 
@@ -119,6 +119,119 @@ elif page == "Video Analysis":
         st.subheader("🧠 AI Insights")
 
         st.text_area("Analysis Output", result, height=400)
+
+# =========================================================
+# 🎙️ TRANSCRIPT ANALYSIS PAGE
+# =========================================================
+elif page == "Transcript Analysis":
+    st.header("🎙️ Transcript Analysis")
+    st.markdown("Analyze the script and pacing of a video using AI.")
+    
+    from youtube_api import get_video_transcript
+    from analysis import analyze_transcript
+    
+    source_type = st.radio("How do you want to provide the video?", 
+                           ["Select Recent Video", "Direct YouTube URL", "Upload MP4"])
+                           
+    transcript_text = None
+    
+    if source_type == "Select Recent Video":
+        video_titles = [v["title"] for v in videos]
+        selected_title = st.selectbox("Select a video", video_titles)
+        if st.button("Fetch Transcript"):
+            video = next(v for v in videos if v["title"] == selected_title)
+            with st.spinner("Fetching transcript..."):
+                transcript_text = get_video_transcript(video["video_id"])
+                if not transcript_text:
+                    st.error("Could not fetch transcript. The video might not have captions.")
+                    
+    elif source_type == "Direct YouTube URL":
+        url = st.text_input("Enter YouTube Video URL")
+        if st.button("Fetch Transcript") and url:
+            with st.spinner("Extracting Video ID & Fetching Transcript..."):
+                import re
+                match = re.search(r"(?:v=|\/)([0-9A-Za-z_-]{11}).*", url)
+                if match:
+                    vid_id = match.group(1)
+                    transcript_text = get_video_transcript(vid_id)
+                    if not transcript_text:
+                        st.error("Could not fetch transcript. The video might not have captions.")
+                else:
+                    st.error("Invalid YouTube URL.")
+                    
+    elif source_type == "Upload MP4":
+        uploaded_file = st.file_uploader("Upload an MP4 video", type=["mp4", "mov"])
+        if uploaded_file is not None:
+            if st.button("Extract & Transcribe"):
+                with st.spinner("Extracting Audio & Transcribing via Google Web Speech API..."):
+                    import tempfile
+                    import os
+                    from moviepy import VideoFileClip
+                    import speech_recognition as sr
+                    import math
+                    
+                    with tempfile.NamedTemporaryFile(delete=False, suffix=".mp4") as tmp_mp4:
+                        tmp_mp4.write(uploaded_file.read())
+                        tmp_mp4_path = tmp_mp4.name
+                        
+                    tmp_wav_path = tmp_mp4_path.replace(".mp4", ".wav")
+                    
+                    try:
+                        st.info("Extracting audio from video...")
+                        video_clip = VideoFileClip(tmp_mp4_path)
+                        audio_clip = video_clip.audio
+                        if audio_clip is None:
+                            raise ValueError("The uploaded video does not contain an audio track.")
+                        audio_clip.write_audiofile(tmp_wav_path, logger=None)
+                        
+                        st.info("Audio extracted. Transcribing in chunks...")
+                        recognizer = sr.Recognizer()
+                        
+                        chunk_duration = 30 # seconds
+                        total_duration = audio_clip.duration
+                        chunks = math.ceil(total_duration / chunk_duration)
+                        
+                        full_transcript = []
+                        my_bar = st.progress(0, text="Transcribing audio chunks...")
+                        
+                        with sr.AudioFile(tmp_wav_path) as source:
+                            for i in range(chunks):
+                                audio_data = recognizer.record(source, duration=chunk_duration)
+                                try:
+                                    text = recognizer.recognize_google(audio_data)
+                                    full_transcript.append(text)
+                                except sr.UnknownValueError:
+                                    pass # Silence or unintelligible
+                                my_bar.progress((i + 1) / chunks, text=f"Transcribing part {i+1}/{chunks}...")
+                                
+                        transcript_text = " ".join(full_transcript)
+                        st.success("Transcription complete!")
+                        
+                    except sr.RequestError as e:
+                        st.error(f"Could not request results from Google Speech Recognition service; {e}")
+                    except Exception as e:
+                        st.error(f"An error occurred: {e}")
+                    finally:
+                        try:
+                            video_clip.close()
+                        except:
+                            pass
+                        if os.path.exists(tmp_mp4_path):
+                            try: os.remove(tmp_mp4_path)
+                            except: pass
+                        if os.path.exists(tmp_wav_path):
+                            try: os.remove(tmp_wav_path)
+                            except: pass
+
+    if transcript_text:
+        st.subheader("📝 Transcript Snippet")
+        st.text_area("Raw Transcript", transcript_text[:1000] + ("..." if len(transcript_text)>1000 else ""), height=150)
+        
+        st.divider()
+        st.subheader("🤖 AI Content Analysis")
+        with st.spinner("AI is analyzing the transcript..."):
+            analysis_result = analyze_transcript(transcript_text)
+            st.markdown(analysis_result)
 
 # =========================================================
 # 🤖 AI ASSISTANT PAGE

@@ -5,6 +5,7 @@ from googleapiclient.discovery import build
 from google_auth_oauthlib.flow import InstalledAppFlow
 from google.auth.transport.requests import Request
 from googleapiclient.errors import HttpError
+from youtube_transcript_api import YouTubeTranscriptApi
 
 SCOPES = ["https://www.googleapis.com/auth/youtube.force-ssl"]
 
@@ -95,6 +96,9 @@ def get_comments(video_id):
         if "commentsDisabled" in str(e):
             print(f"Comments disabled for video: {video_id}")
             return []
+        elif e.resp.status == 404 or "videoNotFound" in str(e):
+            print(f"Video not found (404): {video_id}")
+            return []
         else:
             raise e
 
@@ -135,6 +139,15 @@ def post_top_level_comment(video_id, text):
         return f"Success! Announcement posted on video {video_id}. Comment ID: {response['id']}"
     except HttpError as e:
         return f"Failed to post announcement. Ensure you are authorized. Error: {e}"
+
+def delete_comment(comment_id):
+    youtube = get_youtube_service()
+    try:
+        request = youtube.comments().delete(id=comment_id)
+        request.execute()
+        return f"Success! Deleted comment {comment_id}."
+    except HttpError as e:
+        return f"Failed to delete comment. Ensure you are authorized. Error: {e}"
 
 def resolve_channel(query):
     youtube = get_youtube_service()
@@ -226,3 +239,14 @@ def search_channels_by_niche(niche, max_results=5):
                 break
                 
     return channels
+
+def get_video_transcript(video_id):
+    try:
+        # Fetch transcript using the class instance method
+        transcript_list = YouTubeTranscriptApi().fetch(video_id)
+        # Combine all parts into a single text block
+        transcript_text = " ".join([t.text for t in transcript_list])
+        return transcript_text
+    except Exception as e:
+        print(f"Error fetching transcript for {video_id}: {e}")
+        return None

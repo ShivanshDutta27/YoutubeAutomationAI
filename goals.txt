@@ -1,0 +1,3 @@
+implement next video views 
+advanced vidoe analysis
+script analyzer (before video is uploaded, user uploads transcript or video, we suggest improvements)
