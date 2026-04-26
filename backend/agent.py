@@ -1,8 +1,8 @@
 from langchain_ollama import ChatOllama
 from langgraph.prebuilt import create_react_agent
 from langchain_core.tools import tool
-from youtube_api import get_comments, get_videos, get_video_stats, reply_to_comment, post_top_level_comment as api_post_top_level, delete_comment
-from analysis import analyze_comments, detect_spam_comments
+from backend.youtube_api import get_comments, get_videos, get_video_stats, reply_to_comment, post_top_level_comment as api_post_top_level, delete_comment
+from backend.analysis import analyze_comments, detect_spam_comments
 
 from langgraph.checkpoint.memory import MemorySaver
 

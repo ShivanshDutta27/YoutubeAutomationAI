@@ -1,7 +1,7 @@
 from langchain_ollama import ChatOllama
 from langgraph.prebuilt import create_react_agent
 from langchain_core.tools import tool
-from youtube_api import search_channels_by_niche
+from backend.youtube_api import search_channels_by_niche
 from langgraph.checkpoint.memory import MemorySaver
 
 llm = ChatOllama(model="llama3.2", temperature=0)
